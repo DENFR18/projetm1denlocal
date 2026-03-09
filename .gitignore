@@ -1,0 +1,34 @@
+# --- INFRASTRUCTURE (Sécurité & Poids) ---
+# On ignore les exécutables qui font planter le push GitHub
+infra/*.exe
+infra/eksctl
+infra/helm
+*.exe
+*.dll
+
+# --- JAVA / MAVEN ---
+# On ne suit pas les fichiers compilés, seulement le code source
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# --- IDE (VS Code / IntelliJ) ---
+.vscode/
+.idea/
+*.iml
+*.iws
+.classpath
+.project
+.settings/
+bin/
+
+# --- LOGS & TEMP ---
+*.log
+tmp/
+temp/
+
+# --- OS SPECIFIC ---
+.DS_Store
+Thumbs.db

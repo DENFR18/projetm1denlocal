@@ -1,0 +1,32 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"
+  config.vm.box_check_update = false
+
+  # --- VM MASTER (1.5 Go de RAM - Strict minimum pour K3s Master) ---
+  config.vm.define "k3s-master" do |master|
+    master.vm.hostname = "k3s-master"
+    master.vm.network "private_network", ip: "192.168.56.10"
+    master.vm.provider "virtualbox" do |vb|
+      vb.memory = "5012" 
+      vb.cpus = 2
+      vb.name = "k3s-master"
+    end
+  end
+
+  # --- VM WORKER 1 (1 Go de RAM - Suffisant pour tes tests) ---
+  config.vm.define "k3s-worker-1" do |worker1|
+    worker1.vm.hostname = "k3s-worker-1"
+    worker1.vm.network "private_network", ip: "192.168.56.11"
+    worker1.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 1
+      vb.name = "k3s-worker-1"
+    end
+  end
+
+  # J'ai supprimé le Worker 2 pour sauver ta RAM.
+  # Avec 2.5 Go alloués au total, ton PC tiendra le coup.
+end
