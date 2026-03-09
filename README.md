@@ -1,90 +1,89 @@
-🚀 PROJET M1 : PLATEFORME DE DISTRIBUTION DE CODE (Dossier Technique Complet)
-Rappel du but : On construit une plateforme pour héberger et exécuter du code (Java, Python, Go) de manière isolée. Pour ça, on a monté une infrastructure K8s avec une chaîne CI/CD et du Monitoring.
+🏗️ Refonte Architecturale Complète : PaaS Cloud-Native & CI/CD
+Salut l'équipe 👋,
 
-🏗️ 1. DENILSSON : L'Infrastructure et le Socle K8s
-Mon rôle : Créer les serveurs et exposer notre API sur le web.
+Gros point technique aujourd'hui. Ce week-end, face aux limites de notre ancienne infrastructure (la VM Vagrant qui saturait la RAM et plantait sans arrêt), j'ai pris la décision de tout reprendre de zéro.
 
-💻 Phase 1 : Le crash-test en local (À raconter au prof)
-J'ai commencé par tout monter sur mon PC Windows pour tester l'API.
+L'objectif n'était pas de faire un simple patch, mais de concevoir une véritable architecture logicielle et DevOps de niveau production. J'ai développé un backend complet, mis en place l'orchestration Kubernetes, réparé notre dépôt Git et créé une chaîne CI/CD entièrement automatisée.
 
-Les commandes : J'ai monté des VM avec vagrant up et j'y ai mis K3s (Kubernetes léger). Ensuite, j'ai dû bypasser la sécurité Windows pour lancer mes scripts :
+Prenez le temps de lire ce document en entier. Il explique toute la mécanique du projet que j'ai monté, dossier par dossier, pour qu'on puisse ensuite le déployer ensemble sur le Cloud public.
 
-PowerShell
-Set-ExecutionPolicy Bypass -Scope Process
-Le déploiement local : J'ai utilisé ce fichier deployment.yaml basique pour lancer notre API Java :
+📂 1. La Nouvelle Architecture du Projet (Deep Dive)
+Fini le code en vrac. J'ai repensé toute l'arborescence pour séparer proprement la logique métier, le frontend, l'infrastructure et l'automatisation. Voici la structure exacte que j'ai mise en place sur le dépôt :
 
-YAML
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: api-backend-deployment
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: api-backend
-  template:
-    metadata:
-      labels:
-        app: api-backend
-    spec:
-      containers:
-      - name: api-backend
-        image: 953p0/projetm1:latest
-        ports:
-        - containerPort: 8080
-Le problème (L'argument en or) : Mon PC n'a que 16 Go de RAM. Quand je tapais kubectl get pods -w, mes pods restaient bloqués en ContainerCreating pendant des plombes, et finissaient par crasher en OOMKilled (Out of Memory) quand on essayait d'ajouter les sondes de métriques. L'infra locale ne tenait pas la route.
+Plaintext
+PROJET M1/
+├── .github/workflows/       # 🤖 CI/CD : L'usine logicielle
+│   └── cicd.yaml            # Le pipeline GitHub Actions
+├── api-backend/             # 🧠 LE CŒUR DU SYSTÈME (Spring Boot)
+│   ├── src/main/java/com/example/
+│   │   ├── controller/      # API Rest : Gère les requêtes HTTP du front
+│   │   ├── model/           # Définition des objets de données
+│   │   ├── repository/      # Couche d'accès aux données (logs, histo)
+│   │   ├── service/         # Logique métier et orchestration K8s
+│   │   │   └── DeploymentService.java  # Le lien direct avec l'API K8s
+│   │   └── App.java         # Point d'entrée de l'application Java
+│   ├── src/main/resources/static/
+│   │   └── index.html       # 🌐 Frontend : Interface de soumission de code
+│   ├── target/              # Fichiers compilés par Maven (.jar, classes)
+│   ├── dockerfile           # Recette de conteneurisation du backend
+│   └── pom.xml              # Gestion des dépendances Java (Maven)
+├── infra/                   # ⚙️ INFRASTRUCTURE & DÉPLOIEMENT
+│   ├── deployment.yaml      # Manifestes Kubernetes (Déploiements, Services)
+│   ├── eksctl.exe / helm.exe # Outils CLI (Désormais bloqués par Git)
+│   └── Vagrantfile          # Vestige de l'ancienne VM
+├── .gitignore               # 🛡️ Filtre de sécurité Git
+└── dockerfile / pom.xml     # Fichiers root de configuration
+🧠 2. Le Backend Java (Le Moteur d'Orchestration)
+C'est ici que j'ai passé le plus de temps. J'ai codé une API REST en Java 17 avec le framework Spring Boot. Ce n'est pas juste un serveur web, c'est un véritable orchestrateur.
 
-☁️ Phase 2 : Le passage sur Azure (AKS)
-Pour que vous puissiez bosser proprement, j'ai tout migré sur le Cloud Microsoft Azure.
+Comment ça marche sous le capot ? (Architecture MVC)
+L'Interface Utilisateur (index.html) : L'utilisateur choisit son langage (Node.js, Python, Java) et tape son code. Au clic sur "Lancer", le code est envoyé en JSON à notre backend.
 
-Les commandes de création (Ce que j'ai tapé pour vous créer le serveur) :
+Le Routeur (controller/) : Il intercepte la requête, vérifie qu'elle n'est pas vide, et la transmet à la couche de service.
 
-PowerShell
-# 1. Je me connecte
-az login
+L'Intelligence (service/DeploymentService.java) : C'est la pièce maîtresse du projet. Ce fichier Java utilise le client officiel Kubernetes.
 
-# 2. Je crée le groupe de ressources
-az group create --name ProjetM1-RG --location westeurope
+Il génère dynamiquement un conteneur éphémère (Pod) spécifique au langage choisi.
 
-# 3. Je crée le vrai cluster K8s
-az aks create --resource-group ProjetM1-RG --name ProjetM1Cluster --node-count 2
+Il injecte le code de l'utilisateur à l'intérieur.
 
-# 4. Je relie mon terminal au cluster
-az aks get-credentials --resource-group ProjetM1-RG --name ProjetM1Cluster
-L'astuce finale : J'ai modifié le fichier service.yaml de l'API pour changer le type: NodePort en type: LoadBalancer. Grâce à ça, Azure nous a filé une IP Publique. Notre API est en ligne, le socle est prêt.
+Il surveille l'état du Pod. Si le téléchargement de l'image (Pull) prend plus de 20 secondes, il gère proprement un "Timeout" pour ne pas bloquer le serveur.
 
-⚙️ 2. HAFSA : La CI/CD (L'Usine Logicielle)
-Ton rôle : Automatiser le déploiement de l'API. Si on modifie le code Java, ton robot doit s'occuper de tout envoyer sur Azure.
+Une fois le code exécuté, il extrait les logs (le résultat) et ordonne à Kubernetes de détruire le Pod pour libérer les ressources.
 
-💻 Phase 1 : Comprendre Docker
-Notre API doit être mise dans une "boîte" étanche.
+Le Stockage (model/ & repository/) : Ces dossiers sont préparés pour sauvegarder l'historique des exécutions (pour pouvoir relier ça à une base de données SQL plus tard).
 
-Le code (Ton Dockerfile) : Voici à quoi ressemble la recette pour empaqueter notre app Java. C'est ce fichier qui doit être à la racine de notre code :
+💥 3. Le Crash Git et la mise en place de la CI/CD
+Le Problème : Le dépôt Git était mort
+En regardant le dossier infra/, vous verrez eksctl.exe et helm.exe. Ces binaires pèsent des centaines de mégaoctets (jusqu'à 144 Mo pour eksctl). En essayant de les versionner, on a complètement saturé Git et GitHub refusait nos push.
 
-Dockerfile
-FROM eclipse-temurin:17-jdk-alpine
-VOLUME /tmp
-COPY target/api-backend.jar app.jar
-ENTRYPOINT ["java","-jar","/app.jar"]
-Tes commandes manuelles pour tester :
+La Solution : Le grand nettoyage
+J'ai dû réécrire l'historique Git en profondeur pour purger ces fichiers. Ensuite, j'ai créé un .gitignore ultra strict pour être sûr que ça n'arrive plus jamais :
 
-PowerShell
-docker build -t 953p0/projetm1-api:latest .
-docker run -p 8080:8080 953p0/projetm1-api:latest
-☁️ Phase 2 : Le Workflow GitHub Actions (Ton vrai boulot)
-Tu dois automatiser les commandes Docker du dessus.
+Plaintext
+# Fichiers compilés et exécutables lourds
+target/
+*.jar
+*.exe
+*.dll
 
-Sur GitHub : Va dans Settings > Secrets and variables > Actions et ajoute DOCKER_USERNAME (notre pseudo) et DOCKER_PASSWORD.
+# IDE et OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+L'Automatisation : GitHub Actions (cicd.yaml)
+Une fois le repo propre, j'ai codé l'usine logicielle. À chaque fois qu'on pousse sur la branche main, un serveur s'allume, installe Java 17, télécharge Maven, compile tout le dossier api-backend, construit l'image Docker, s'authentifie sur Docker Hub et la met en ligne.
 
-Le code du robot : Dans notre projet, crée ce fichier exact : .github/workflows/cicd.yaml et colle ça :
+Voici le code complet de notre pipeline :
 
 YAML
-name: CI/CD Pipeline K8s
+name: CI/CD Pipeline API PaaS
 
 on:
   push:
-    branches: [ "main" ] # Se déclenche quand on push sur main
+    branches:
+      - main
 
 jobs:
   build-and-push:
@@ -92,6 +91,15 @@ jobs:
     steps:
       - name: Récupération du code
         uses: actions/checkout@v3
+
+      - name: Configuration de Java 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Compilation et empaquetage (Maven)
+        run: mvn clean package -DskipTests
 
       - name: Connexion à Docker Hub
         uses: docker/login-action@v2
@@ -102,40 +110,64 @@ jobs:
       - name: Build et Push de l'image Docker
         uses: docker/build-push-action@v4
         with:
-          context: .
+          context: ./api-backend
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/projetm1-api:latest
-A la soutenance : Tu montreras que faire un simple git push active ce script, construit l'image, et l'envoie sur le web.
+          tags: den95/projetm1-api:latest
+(Pour info : le dernier build complet de tout le backend jusqu'à la publication a pris 1 minute et 16 secondes chronomètre en main).
 
-📊 3. GWENN : Le Monitoring et l'Observabilité
-Ton rôle : Installer la tour de contrôle. Il nous faut Prometheus (la base de données de métriques) et Grafana (les tableaux de bord) pour surveiller la RAM/CPU de notre API sur Azure.
+📊 4. La Tour de Contrôle : Observabilité et Monitoring
+Faire tourner des pods, c'est bien. Vérifier que l'infra tient la route, c'est mieux.
+J'ai déployé en local la stack kube-prometheus-stack via Helm dans le namespace monitoring.
 
-💻 Phase 1 : Pourquoi on n'a pas fait ça en local
-A expliquer au prof : On a d'abord testé ta stack en local sur mon K3s avec Vagrant. Ça a été un carnage. Helm plantait. Grafana affichait le message "An error occurred within the plugin" et les courbes restaient sur "No data" parce que le PC n'avait plus de mémoire pour faire tourner l'outil kube-state-metrics. C'est techniquement impossible d'avoir un monitoring fiable sur une machine locale de 16 Go.
+Le Stress-Test K8s
+Pour prouver que Prometheus et Grafana détectent bien l'activité de notre API Java, j'ai écrit un script Node.js intensif que j'ai exécuté depuis notre portail web index.html.
 
-☁️ Phase 2 : L'installation sur Azure (Le succès)
-Grâce au cluster Azure AKS, tu as la puissance nécessaire et plus aucun blocage de sécurité.
+Le Script "Mode BRRR" (Surcharge CPU) :
 
-Tes commandes exactes à taper dans le terminal :
+JavaScript
+console.log("🔥 Démarrage du mode BRRR...");
+const duration = 60000; // 60 secondes de calcul à 100% CPU
+const start = Date.now();
+let operations = 0;
 
-PowerShell
-# 1. Tu ajoutes le "Play Store" de Prometheus à ton PC
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
+// Boucle mathématique asynchrone pour saturer le Pod
+while (Date.now() - start < duration) {
+    Math.sqrt(Math.random() * 1000) * Math.atan(Math.random());
+    operations++;
+    if (operations % 5000000 === 0) {
+        console.log(`Statut : ${operations} opérations...`);
+    }
+}
+console.log("✅ Stress-test terminé. Le cluster a bien transpiré !");
+Le Résultat : L'API a créé le Pod, et Grafana a instantanément affiché le pic de charge CPU et l'augmentation des quotas dans ses graphiques. Le pont entre le code, K8s et le monitoring est 100% opérationnel.
 
-# 2. Tu lances l'installation sur Azure (avec le LoadBalancer pour avoir une IP !)
-helm install monitoring prometheus-community/kube-prometheus-stack `
-  --namespace monitoring --create-namespace `
-  --set grafana.service.type=LoadBalancer
-Comment récupérer ton interface :
-Tu attends 2 minutes, puis tu tapes ça pour demander l'IP publique à Azure :
+(Petite galère technique résolue : j'ai dû décoder les Secrets K8s en Base64 pour récupérer le mot de passe admin de Grafana, et monter un port-forward réseau pour exposer l'interface).
 
-PowerShell
-kubectl get svc -n monitoring monitoring-grafana
-Regarde la colonne EXTERNAL-IP. Tu copies cette adresse dans ton navigateur.
+🚀 5. Comment reproduire cette Infra sur vos PC
+Le code est en ligne. Pour tester ça chez vous et avoir la même puissance de feu que moi, voici la procédure :
 
-Tes identifiants :
+Assurez-vous d'avoir activé Kubernetes dans Docker Desktop.
 
-User : admin
+Récupérez les dernières modifs via git pull.
 
-Password : prom-operator
+Pour vérifier que l'API est bien déployée par Kubernetes (via l'image Docker Hub) :
+
+Bash
+kubectl get pods -A
+Pour accéder à la tour de contrôle Grafana (laissez ce terminal ouvert) :
+
+Bash
+kubectl port-forward svc/monitoring-grafana 8081:80 -n monitoring
+(Rendez-vous sur http://localhost:8081 - venez me voir en privé pour les identifiants admin).
+
+🎯 La Feuille de Route
+L'architecture locale (Proof of Concept) est maintenant un succès total.
+La suite logique pour le projet final :
+
+Prendre notre manifeste dans le dossier infra/deployment.yaml.
+
+Le pousser sur un véritable cluster Cloud Managé (Amazon EKS ou Azure AKS).
+
+Connecter notre pipeline GitHub Actions directement à ce Cloud public pour que le déploiement se fasse en live.
+
+Prenez le temps d'explorer l'arborescence, en particulier la mécanique MVC dans le dossier api-backend. Dites-moi quand vous avez cloné tout ça et on s'organise une synchro pour que je vous montre comment lancer les tests ! ✌️
