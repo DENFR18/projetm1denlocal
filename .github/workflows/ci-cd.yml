@@ -120,7 +120,7 @@ jobs:
 
       - name: URL de l'application
         run: |
-          echo "🌐 URL publique :"
+          echo "URL publique :"
           kubectl get svc api-backend-service \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
           echo ""
