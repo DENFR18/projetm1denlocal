@@ -141,6 +141,16 @@ jobs:
             --region ${{ secrets.AWS_REGION }} \
             --name   ${{ secrets.EKS_CLUSTER_NAME }}
 
+      - name: Appliquer RBAC et Secret Docker Hub
+        run: |
+          kubectl apply -f infra/k8s/rbac.yaml
+          kubectl create secret docker-registry dockerhub-credentials \
+            --docker-username=${{ secrets.DOCKER_USERNAME }} \
+            --docker-password=${{ secrets.DOCKER_PASSWORD }} \
+            --docker-server=https://index.docker.io/v1/ \
+            --namespace=default \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Rolling update vers la nouvelle image
         run: |
           kubectl set image deployment/api-backend-deployment \

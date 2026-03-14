@@ -17,6 +17,9 @@ spec:
         prometheus.io/path: "/actuator/prometheus"
         prometheus.io/port: "8080"
     spec:
+      serviceAccountName: api-backend-sa
+      imagePullSecrets:
+        - name: dockerhub-credentials
       containers:
       - name: api-container
         image: den95/projetm1:v2
