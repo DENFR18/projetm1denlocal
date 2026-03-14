@@ -1,0 +1,108 @@
+# Helm values pour kube-prometheus-stack
+# Installation : helm install monitoring prometheus-community/kube-prometheus-stack \
+#   -f infra/monitoring/prometheus-values.yaml \
+#   --namespace monitoring --create-namespace
+
+# ─── Grafana ────────────────────────────────────────────────────────────────
+grafana:
+  enabled: true
+  adminPassword: "ProjetM1Grafana!"   # Changer en production via un secret K8s
+
+  service:
+    type: LoadBalancer   # AWS ELB pour accès externe
+
+  # Dashboards pré-configurés importés automatiquement
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ""
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+  dashboards:
+    default:
+      # Dashboard Kubernetes cluster overview
+      kubernetes-cluster:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      # Dashboard JVM (Spring Boot / Micrometer)
+      jvm-micrometer:
+        gnetId: 4701
+        revision: 1
+        datasource: Prometheus
+      # Dashboard pods et déploiements
+      kubernetes-pods:
+        gnetId: 6417
+        revision: 1
+        datasource: Prometheus
+
+# ─── Prometheus ─────────────────────────────────────────────────────────────
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    # Scraper tous les ServiceMonitors et PodMonitors du cluster
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+    # Scraping des annotations prometheus.io/* sur les pods
+    additionalScrapeConfigs:
+      - job_name: "api-backend"
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ["default"]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: replace
+            target_label: app
+
+    retention: 15d   # Conserver 15 jours de métriques
+
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+# ─── AlertManager ───────────────────────────────────────────────────────────
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "10m"
+      limits:
+        memory: "128Mi"
+        cpu: "50m"
+
+# ─── Node Exporter (métriques des noeuds EC2) ───────────────────────────────
+nodeExporter:
+  enabled: true
+
+# ─── kube-state-metrics (état des ressources K8s) ───────────────────────────
+kubeStateMetrics:
+  enabled: true

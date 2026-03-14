@@ -1,141 +1,210 @@
-🚀 PROJET M1 : PLATEFORME DE DISTRIBUTION DE CODE (Dossier Technique Complet)
-Rappel du but : On construit une plateforme pour héberger et exécuter du code (Java, Python, Go) de manière isolée. Pour ça, on a monté une infrastructure K8s avec une chaîne CI/CD et du Monitoring.
+# Projet M1 — Plateforme PaaS sur AWS EKS
 
-🏗️ 1. DENILSSON : L'Infrastructure et le Socle K8s
-Mon rôle : Créer les serveurs et exposer notre API sur le web.
+Plateforme pour héberger et exécuter du code (Java, Python, Go) de manière isolée, déployée sur AWS EKS avec CI/CD automatisé et monitoring complet (Prometheus + Grafana).
 
-💻 Phase 1 : Le crash-test en local (À raconter au prof)
-J'ai commencé par tout monter sur mon PC Windows pour tester l'API.
+---
 
-Les commandes : J'ai monté des VM avec vagrant up et j'y ai mis K3s (Kubernetes léger). Ensuite, j'ai dû bypasser la sécurité Windows pour lancer mes scripts :
+## Architecture
 
-PowerShell
-Set-ExecutionPolicy Bypass -Scope Process
-Le déploiement local : J'ai utilisé ce fichier deployment.yaml basique pour lancer notre API Java :
+```
+GitHub Push → GitHub Actions (CI/CD)
+                ↓
+         Maven build + Docker image
+                ↓
+         Docker Hub Registry
+                ↓
+     ┌─────────────────────────────┐
+     │   AWS EKS (Kubernetes)      │
+     │   2 workers t3.small        │
+     │   2 replicas API            │
+     │   Monitoring namespace      │
+     └─────────────────────────────┘
+              ↓
+    Prometheus scrape /actuator/prometheus
+              ↓
+         Grafana dashboards
+```
 
-YAML
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: api-backend-deployment
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: api-backend
-  template:
-    metadata:
-      labels:
-        app: api-backend
-    spec:
-      containers:
-      - name: api-backend
-        image: 953p0/projetm1:latest
-        ports:
-        - containerPort: 8080
-Le problème (L'argument en or) : Mon PC n'a que 16 Go de RAM. Quand je tapais kubectl get pods -w, mes pods restaient bloqués en ContainerCreating pendant des plombes, et finissaient par crasher en OOMKilled (Out of Memory) quand on essayait d'ajouter les sondes de métriques. L'infra locale ne tenait pas la route.
+---
 
-☁️ Phase 2 : Le passage sur Azure (AKS)
-Pour que vous puissiez bosser proprement, j'ai tout migré sur le Cloud Microsoft Azure.
+## Stack technique
 
-Les commandes de création (Ce que j'ai tapé pour vous créer le serveur) :
+| Couche | Technologie |
+|--------|-------------|
+| Backend | Spring Boot 3.1.2 / Java 17 |
+| Build | Maven 3.9 |
+| Conteneur | Docker (multi-stage build) |
+| Orchestration | Kubernetes 1.29 sur AWS EKS |
+| Infrastructure | Terraform (VPC + EKS) |
+| CI/CD | GitHub Actions + Docker Hub |
+| Monitoring | kube-prometheus-stack (Prometheus + Grafana + AlertManager) |
+| Métriques app | Spring Actuator + Micrometer |
 
-PowerShell
-# 1. Je me connecte
-az login
+---
 
-# 2. Je crée le groupe de ressources
-az group create --name ProjetM1-RG --location westeurope
+## 1. Pré-requis
 
-# 3. Je crée le vrai cluster K8s
-az aks create --resource-group ProjetM1-RG --name ProjetM1Cluster --node-count 2
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.6
+- [AWS CLI](https://aws.amazon.com/cli/) configuré (`aws configure`)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- [Helm](https://helm.sh/docs/intro/install/) >= 3.x
+- Compte Docker Hub
 
-# 4. Je relie mon terminal au cluster
-az aks get-credentials --resource-group ProjetM1-RG --name ProjetM1Cluster
-L'astuce finale : J'ai modifié le fichier service.yaml de l'API pour changer le type: NodePort en type: LoadBalancer. Grâce à ça, Azure nous a filé une IP Publique. Notre API est en ligne, le socle est prêt.
+---
 
-⚙️ 2. HAFSA : La CI/CD (L'Usine Logicielle)
-Ton rôle : Automatiser le déploiement de l'API. Si on modifie le code Java, ton robot doit s'occuper de tout envoyer sur Azure.
+## 2. Déploiement de l'infrastructure (Terraform)
 
-💻 Phase 1 : Comprendre Docker
-Notre API doit être mise dans une "boîte" étanche.
+```bash
+cd infra/terraform
+terraform init
+terraform plan
+terraform apply
+```
 
-Le code (Ton Dockerfile) : Voici à quoi ressemble la recette pour empaqueter notre app Java. C'est ce fichier qui doit être à la racine de notre code :
+Terraform crée :
+- Un **VPC** avec subnets publics + privés (2 AZ)
+- Un cluster **EKS** Kubernetes 1.29
+- Un **managed node group** : 2x t3.small (scalable jusqu'à 4)
 
-Dockerfile
-FROM eclipse-temurin:17-jdk-alpine
-VOLUME /tmp
-COPY target/api-backend.jar app.jar
-ENTRYPOINT ["java","-jar","/app.jar"]
-Tes commandes manuelles pour tester :
+Récupérer la commande kubectl :
+```bash
+terraform output kubeconfig_command
+# Exemple : aws eks update-kubeconfig --region eu-west-1 --name projetm1-eks
+```
 
-PowerShell
-docker build -t 953p0/projetm1-api:latest .
-docker run -p 8080:8080 953p0/projetm1-api:latest
-☁️ Phase 2 : Le Workflow GitHub Actions (Ton vrai boulot)
-Tu dois automatiser les commandes Docker du dessus.
+---
 
-Sur GitHub : Va dans Settings > Secrets and variables > Actions et ajoute DOCKER_USERNAME (notre pseudo) et DOCKER_PASSWORD.
+## 3. Déploiement de l'application
 
-Le code du robot : Dans notre projet, crée ce fichier exact : .github/workflows/cicd.yaml et colle ça :
+```bash
+# Configurer kubectl
+aws eks update-kubeconfig --region eu-west-1 --name projetm1-eks
 
-YAML
-name: CI/CD Pipeline K8s
+# Déployer namespace monitoring + l'API
+kubectl apply -f infra/k8s/
 
-on:
-  push:
-    branches: [ "main" ] # Se déclenche quand on push sur main
+# Vérifier les pods
+kubectl get pods
+kubectl get svc   # Récupérer l'EXTERNAL-IP du LoadBalancer
+```
 
-jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Récupération du code
-        uses: actions/checkout@v3
+Tester l'API :
+```bash
+curl http://<EXTERNAL-IP>/
+# → "Bravo ! Ton API Java tourne dans Docker via Kubernetes"
 
-      - name: Connexion à Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+curl http://<EXTERNAL-IP>/actuator/prometheus
+# → métriques Prometheus (JVM, HTTP, etc.)
+```
 
-      - name: Build et Push de l'image Docker
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/projetm1-api:latest
-A la soutenance : Tu montreras que faire un simple git push active ce script, construit l'image, et l'envoie sur le web.
+---
 
-📊 3. GWENN : Le Monitoring et l'Observabilité
-Ton rôle : Installer la tour de contrôle. Il nous faut Prometheus (la base de données de métriques) et Grafana (les tableaux de bord) pour surveiller la RAM/CPU de notre API sur Azure.
+## 4. Installation du monitoring (Prometheus + Grafana)
 
-💻 Phase 1 : Pourquoi on n'a pas fait ça en local
-A expliquer au prof : On a d'abord testé ta stack en local sur mon K3s avec Vagrant. Ça a été un carnage. Helm plantait. Grafana affichait le message "An error occurred within the plugin" et les courbes restaient sur "No data" parce que le PC n'avait plus de mémoire pour faire tourner l'outil kube-state-metrics. C'est techniquement impossible d'avoir un monitoring fiable sur une machine locale de 16 Go.
-
-☁️ Phase 2 : L'installation sur Azure (Le succès)
-Grâce au cluster Azure AKS, tu as la puissance nécessaire et plus aucun blocage de sécurité.
-
-Tes commandes exactes à taper dans le terminal :
-
-PowerShell
-# 1. Tu ajoutes le "Play Store" de Prometheus à ton PC
+```bash
+# Ajouter le repo Helm
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-# 2. Tu lances l'installation sur Azure (avec le LoadBalancer pour avoir une IP !)
-helm install monitoring prometheus-community/kube-prometheus-stack `
-  --namespace monitoring --create-namespace `
-  --set grafana.service.type=LoadBalancer
-Comment récupérer ton interface :
-Tu attends 2 minutes, puis tu tapes ça pour demander l'IP publique à Azure :
+# Installer kube-prometheus-stack
+helm install monitoring prometheus-community/kube-prometheus-stack \
+  -f infra/monitoring/prometheus-values.yaml \
+  --namespace monitoring --create-namespace
 
-PowerShell
+# Attendre que les pods démarrent (2-3 minutes)
+kubectl get pods -n monitoring -w
+
+# Récupérer l'IP publique de Grafana
 kubectl get svc -n monitoring monitoring-grafana
-Regarde la colonne EXTERNAL-IP. Tu copies cette adresse dans ton navigateur.
+```
 
-Tes identifiants :
+Accéder à Grafana :
+- URL : `http://<GRAFANA-EXTERNAL-IP>`
+- Login : `admin`
+- Mot de passe : `ProjetM1Grafana!`
 
-User : admin
+### Dashboards pré-installés
+| Dashboard | ID Grafana | Description |
+|-----------|-----------|-------------|
+| Kubernetes Cluster | 7249 | CPU, RAM, noeuds |
+| JVM Micrometer | 4701 | Métriques Spring Boot (heap, GC, threads) |
+| Kubernetes Pods | 6417 | État des déploiements |
 
-Password : prom-operator
+---
+
+## 5. CI/CD — GitHub Actions
+
+### Secrets GitHub à configurer
+
+```
+Settings → Secrets and variables → Actions → New repository secret
+```
+
+| Secret | Valeur |
+|--------|--------|
+| `DOCKER_USERNAME` | Pseudo Docker Hub |
+| `DOCKER_PASSWORD` | Mot de passe Docker Hub |
+| `AWS_ACCESS_KEY_ID` | Clé AWS IAM |
+| `AWS_SECRET_ACCESS_KEY` | Secret AWS IAM |
+| `AWS_REGION` | ex: `eu-west-1` |
+| `EKS_CLUSTER_NAME` | `projetm1-eks` |
+
+### Pipeline automatique
+
+Chaque `git push` sur `main` déclenche :
+1. Compilation Maven + build Docker image
+2. Push image sur Docker Hub (tagué avec le SHA du commit)
+3. Connexion au cluster EKS
+4. Rolling update automatique du déploiement
+
+---
+
+## 6. Structure du projet
+
+```
+.
+├── src/main/java/com/example/App.java          # API Spring Boot
+├── src/main/resources/application.properties   # Config Actuator/Prometheus
+├── pom.xml                                      # Dépendances Maven
+├── dockerfile                                   # Multi-stage build
+├── infra/
+│   ├── terraform/
+│   │   ├── versions.tf                          # Providers Terraform
+│   │   ├── variables.tf                         # Variables (région, type instance...)
+│   │   ├── main.tf                              # VPC + EKS
+│   │   └── outputs.tf                           # Outputs (endpoint, commande kubectl)
+│   ├── k8s/
+│   │   ├── namespace.yaml                       # Namespace monitoring
+│   │   └── deployment.yaml                      # Déploiement K8s + Service LoadBalancer
+│   └── monitoring/
+│       └── prometheus-values.yaml               # Helm values kube-prometheus-stack
+└── .github/workflows/cicd.yaml                  # Pipeline CI/CD
+```
+
+---
+
+## 7. Équipe
+
+| Membre | Rôle |
+|--------|------|
+| DENILSSON | Infrastructure AWS EKS (Terraform, K8s) |
+| HAFSA | CI/CD (GitHub Actions, Docker Hub) |
+| GWENN | Monitoring (Prometheus, Grafana) |
+
+---
+
+## 8. Notes sur les coûts AWS
+
+> Estimation pour un projet de courte durée (à supprimer après la soutenance) :
+> - EKS cluster control plane : ~0.10 $/h
+> - 2x t3.small workers : ~0.04 $/h
+> - NAT Gateway : ~0.05 $/h
+> - Load Balancers (x2) : ~0.02 $/h
+> - **Total estimé : ~0.21 $/h (~5 $/jour)**
+
+Pour supprimer toute l'infra :
+```bash
+helm uninstall monitoring -n monitoring
+kubectl delete -f infra/k8s/
+cd infra/terraform && terraform destroy
+```
