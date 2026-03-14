@@ -32,3 +32,10 @@ temp/
 # --- OS SPECIFIC ---
 .DS_Store
 Thumbs.db
+
+# --- LOCAL TOOLING (ne pas versionner) ---
+.claude/
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
