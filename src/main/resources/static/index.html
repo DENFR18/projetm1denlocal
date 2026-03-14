@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M1 Cloud PaaS</title>
+    <style>
+        :root {
+            --bg-color: #1e1e2e;
+            --panel-bg: #282a36;
+            --text-color: #f8f8f2;
+            --accent: #bd93f9;
+            --success: #50fa7b;
+            --error: #ff5555;
+            --warning: #f1fa8c;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: var(--panel-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--accent);
+            margin-top: 0;
+            font-size: 2.2rem;
+            letter-spacing: 1px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #6272a4;
+            margin-bottom: 30px;
+            font-size: 0.95rem;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            gap: 15px;
+        }
+
+        select, button {
+            padding: 12px 20px;
+            border-radius: 8px;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        select {
+            background: #44475a;
+            color: white;
+            flex: 1;
+            font-weight: bold;
+        }
+
+        button {
+            background: var(--accent);
+            color: #282a36;
+            font-weight: bold;
+            flex: 2;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(189, 147, 249, 0.4);
+        }
+
+        button:disabled {
+            background: #6272a4;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .examples {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .example-btn {
+            padding: 6px 14px;
+            font-size: 13px;
+            background: #44475a;
+            color: var(--text-color);
+            border-radius: 6px;
+            border: 1px solid #6272a4;
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0;
+            flex: none;
+            transition: background 0.2s;
+        }
+
+        .example-btn:hover {
+            background: #6272a4;
+            transform: none;
+            box-shadow: none;
+        }
+
+        textarea {
+            width: 100%;
+            height: 300px;
+            background: #191a21;
+            color: #f8f8f2;
+            font-family: 'Consolas', 'Courier New', Courier, monospace;
+            font-size: 15px;
+            padding: 20px;
+            border: 2px solid #6272a4;
+            border-radius: 8px;
+            box-sizing: border-box;
+            resize: vertical;
+            line-height: 1.5;
+        }
+
+        textarea:focus {
+            border-color: var(--accent);
+        }
+
+        #result-container {
+            margin-top: 25px;
+        }
+
+        .terminal-header {
+            background: #333;
+            padding: 8px 15px;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            font-size: 12px;
+            color: #bbb;
+            font-family: monospace;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+        .dot-red { background: #ff5555; }
+        .dot-yellow { background: #f1fa8c; }
+        .dot-green { background: #50fa7b; }
+
+        #result {
+            background: #000;
+            padding: 20px;
+            border-bottom-left-radius: 8px;
+            border-bottom-right-radius: 8px;
+            min-height: 100px;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            color: var(--success);
+            border-left: 5px solid var(--success);
+            line-height: 1.6;
+        }
+
+        .api-info {
+            margin-top: 30px;
+            padding: 15px 20px;
+            background: #191a21;
+            border-radius: 8px;
+            border-left: 4px solid var(--accent);
+            font-size: 13px;
+            color: #6272a4;
+        }
+
+        .api-info strong { color: var(--accent); }
+        .api-info code {
+            background: #282a36;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--warning);
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🚀 M1 Cloud Platform</h1>
+        <p class="subtitle">Exécution de code sur Kubernetes · AWS EKS · Spring Boot API</p>
+
+        <div class="controls">
+            <select id="lang" onchange="updateExamples()">
+                <option value="python">🐍 Python (3.9)</option>
+                <option value="javascript">🟨 Node.js (18)</option>
+            </select>
+            <button id="runBtn" onclick="runCode()">▶ Lancer le déploiement</button>
+        </div>
+
+        <div class="examples" id="examples"></div>
+
+        <textarea id="code" placeholder="Écrivez votre code ici..."></textarea>
+
+        <div id="result-container">
+            <div class="terminal-header">
+                <span class="dot dot-red"></span>
+                <span class="dot dot-yellow"></span>
+                <span class="dot dot-green"></span>
+                &nbsp;Terminal — Logs Kubernetes
+            </div>
+            <div id="result">Console prête. En attente de code...</div>
+        </div>
+
+        <div class="api-info">
+            <strong>Endpoints disponibles :</strong><br>
+            <code>GET  /api/hello?name=X</code> — Message de bienvenue<br>
+            <code>POST /api/echo</code> — Echo du body JSON<br>
+            <code>GET  /api/status</code> — Statut du service<br>
+            <code>POST /api/deployments/deploy</code> — Exécution de code Python / Node.js
+        </div>
+    </div>
+
+    <script>
+        const EXAMPLES = {
+            python: [
+                { label: "Hello K8s", code: `print("Hello depuis Kubernetes !")
+import sys
+print(f"Python {sys.version}")` },
+                { label: "Fibonacci", code: `def fib(n):
+    a, b = 0, 1
+    for _ in range(n):
+        print(a, end=" ")
+        a, b = b, a + b
+
+fib(10)` },
+                { label: "Appel API", code: `import urllib.request, json
+
+url = "http://localhost:8080/api/status"
+try:
+    with urllib.request.urlopen(url, timeout=3) as r:
+        data = json.loads(r.read())
+        print(json.dumps(data, indent=2))
+except Exception as e:
+    print(f"API inaccessible depuis le pod : {e}")` },
+                { label: "Math", code: `import math
+for i in range(1, 11):
+    print(f"sqrt({i:2d}) = {math.sqrt(i):.4f}")` }
+            ],
+            javascript: [
+                { label: "Hello K8s", code: `console.log("Hello depuis Kubernetes !");
+console.log(\`Node.js \${process.version}\`);` },
+                { label: "Fibonacci", code: `function fib(n) {
+    let [a, b] = [0, 1];
+    const result = [];
+    for (let i = 0; i < n; i++) {
+        result.push(a);
+        [a, b] = [b, a + b];
+    }
+    return result;
+}
+console.log(fib(10).join(" "));` },
+                { label: "Appel API", code: `const http = require("http");
+
+const options = {
+    hostname: "localhost",
+    port: 8080,
+    path: "/api/status",
+    method: "GET"
+};
+
+const req = http.request(options, res => {
+    let data = "";
+    res.on("data", chunk => data += chunk);
+    res.on("end", () => {
+        console.log(JSON.stringify(JSON.parse(data), null, 2));
+    });
+});
+req.on("error", e => console.log(\`API inaccessible depuis le pod : \${e.message}\`));
+req.end();` },
+                { label: "Async/Await", code: `async function fetchStatus() {
+    const data = await new Promise(resolve => {
+        setTimeout(() => resolve({ status: "UP", latency: "12ms" }), 100);
+    });
+    console.log("Status:", JSON.stringify(data, null, 2));
+}
+fetchStatus();` }
+            ]
+        };
+
+        function updateExamples() {
+            const lang = document.getElementById('lang').value;
+            const container = document.getElementById('examples');
+            container.innerHTML = '';
+            EXAMPLES[lang].forEach(ex => {
+                const btn = document.createElement('button');
+                btn.className = 'example-btn';
+                btn.textContent = ex.label;
+                btn.onclick = () => { document.getElementById('code').value = ex.code; };
+                container.appendChild(btn);
+            });
+        }
+
+        async function runCode() {
+            const resBox = document.getElementById('result');
+            const btn = document.getElementById('runBtn');
+
+            resBox.innerText = "⏳ Provisionnement d'un Pod sur Kubernetes en cours...\nExécution du code en attente...";
+            resBox.style.color = "var(--warning)";
+            resBox.style.borderLeftColor = "var(--warning)";
+            btn.disabled = true;
+            btn.innerText = "Déploiement en cours...";
+
+            const payload = {
+                language: document.getElementById('lang').value,
+                code: document.getElementById('code').value
+            };
+
+            try {
+                const response = await fetch('/api/deployments/deploy', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                resBox.innerText = data.output;
+
+                const hasError = data.output.toLowerCase().includes("error")
+                              || data.output.toLowerCase().includes("exception")
+                              || data.output.toLowerCase().includes("traceback");
+                resBox.style.color = hasError ? "var(--error)" : "var(--success)";
+                resBox.style.borderLeftColor = hasError ? "var(--error)" : "var(--success)";
+
+            } catch (err) {
+                resBox.innerText = "❌ Erreur critique : Impossible de joindre l'orchestrateur (API Backend hors ligne).";
+                resBox.style.color = "var(--error)";
+                resBox.style.borderLeftColor = "var(--error)";
+            }
+
+            btn.disabled = false;
+            btn.innerText = "▶ Lancer le déploiement";
+        }
+
+        // Init
+        updateExamples();
+    </script>
+</body>
+</html>
