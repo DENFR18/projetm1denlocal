@@ -1,6 +1,6 @@
 # Projet M1 — Plateforme PaaS sur AWS EKS
 
-Plateforme pour héberger et exécuter du code (Java, Python, Go) de manière isolée, déployée sur AWS EKS avec CI/CD automatisé et monitoring complet (Prometheus + Grafana).
+Plateforme pour héberger et exécuter du code (Java, Python, Node.js) de manière isolée, déployée sur AWS EKS avec CI/CD automatisé et monitoring complet (Prometheus + Grafana).
 
 ---
 
@@ -32,6 +32,7 @@ GitHub Push → GitHub Actions (CI/CD)
 | Couche | Technologie |
 |--------|-------------|
 | Backend | Spring Boot 3.1.2 / Java 17 |
+| Exécution code | Python 3 + Node.js 18 (dans le container) |
 | Build | Maven 3.9 |
 | Conteneur | Docker (multi-stage build) |
 | Orchestration | Kubernetes 1.29 sur AWS EKS |
@@ -91,7 +92,10 @@ kubectl get svc   # Récupérer l'EXTERNAL-IP du LoadBalancer
 Tester l'API :
 ```bash
 curl http://<EXTERNAL-IP>/
-# → "Bravo ! Ton API Java tourne dans Docker via Kubernetes"
+# → Interface web M1 Cloud Platform
+
+curl http://<EXTERNAL-IP>/api/status
+# → {"status":"UP","service":"ProjetM1 API","version":"2.0.0",...}
 
 curl http://<EXTERNAL-IP>/actuator/prometheus
 # → métriques Prometheus (JVM, HTTP, etc.)
@@ -99,22 +103,36 @@ curl http://<EXTERNAL-IP>/actuator/prometheus
 
 ---
 
-## 4. Installation du monitoring (Prometheus + Grafana)
+## 4. Endpoints API
+
+| Méthode | Endpoint | Description |
+|---------|----------|-------------|
+| `GET` | `/` | Interface web (éditeur Python / Node.js) |
+| `GET` | `/api/hello?name=X` | Message de bienvenue |
+| `POST` | `/api/echo` | Echo du body JSON |
+| `GET` | `/api/status` | Statut du service |
+| `POST` | `/api/deployments/deploy` | Exécuter du code Python ou Node.js |
+
+Exemple d'appel deploy :
+```bash
+curl -X POST http://<EXTERNAL-IP>/api/deployments/deploy \
+  -H "Content-Type: application/json" \
+  -d '{"language":"python","code":"print(\"Hello K8s !\")"}'
+```
+
+---
+
+## 5. Installation du monitoring (Prometheus + Grafana)
 
 ```bash
-# Ajouter le repo Helm
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-# Installer kube-prometheus-stack
 helm install monitoring prometheus-community/kube-prometheus-stack \
   -f infra/monitoring/prometheus-values.yaml \
   --namespace monitoring --create-namespace
 
-# Attendre que les pods démarrent (2-3 minutes)
 kubectl get pods -n monitoring -w
-
-# Récupérer l'IP publique de Grafana
 kubectl get svc -n monitoring monitoring-grafana
 ```
 
@@ -132,7 +150,7 @@ Accéder à Grafana :
 
 ---
 
-## 5. CI/CD — GitHub Actions
+## 6. CI/CD — GitHub Actions
 
 ### Secrets GitHub à configurer
 
@@ -159,14 +177,15 @@ Chaque `git push` sur `main` déclenche :
 
 ---
 
-## 6. Structure du projet
+## 7. Structure du projet
 
 ```
 .
 ├── src/main/java/com/example/App.java          # API Spring Boot
+├── src/main/resources/static/index.html        # Interface web
 ├── src/main/resources/application.properties   # Config Actuator/Prometheus
 ├── pom.xml                                      # Dépendances Maven
-├── dockerfile                                   # Multi-stage build
+├── dockerfile                                   # Multi-stage build (+ Python3 + Node.js)
 ├── infra/
 │   ├── terraform/
 │   │   ├── versions.tf                          # Providers Terraform
@@ -178,12 +197,12 @@ Chaque `git push` sur `main` déclenche :
 │   │   └── deployment.yaml                      # Déploiement K8s + Service LoadBalancer
 │   └── monitoring/
 │       └── prometheus-values.yaml               # Helm values kube-prometheus-stack
-└── .github/workflows/cicd.yaml                  # Pipeline CI/CD
+└── .github/workflows/ci-cd.yml                  # Pipeline CI/CD
 ```
 
 ---
 
-## 7. Équipe
+## 8. Équipe
 
 | Membre | Rôle |
 |--------|------|
@@ -193,7 +212,7 @@ Chaque `git push` sur `main` déclenche :
 
 ---
 
-## 8. Notes sur les coûts AWS
+## 9. Notes sur les coûts AWS
 
 > Estimation pour un projet de courte durée (à supprimer après la soutenance) :
 > - EKS cluster control plane : ~0.10 $/h
