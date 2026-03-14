@@ -1,173 +1,229 @@
-🏗️ Refonte Architecturale Complète : PaaS Cloud-Native & CI/CD
-Salut l'équipe 👋,
+# Projet M1 — Plateforme PaaS sur AWS EKS
 
-Gros point technique aujourd'hui. Ce week-end, face aux limites de notre ancienne infrastructure (la VM Vagrant qui saturait la RAM et plantait sans arrêt), j'ai pris la décision de tout reprendre de zéro.
+Plateforme pour héberger et exécuter du code (Java, Python, Node.js) de manière isolée, déployée sur AWS EKS avec CI/CD automatisé et monitoring complet (Prometheus + Grafana).
 
-L'objectif n'était pas de faire un simple patch, mais de concevoir une véritable architecture logicielle et DevOps de niveau production. J'ai développé un backend complet, mis en place l'orchestration Kubernetes, réparé notre dépôt Git et créé une chaîne CI/CD entièrement automatisée.
+---
 
-Prenez le temps de lire ce document en entier. Il explique toute la mécanique du projet que j'ai monté, dossier par dossier, pour qu'on puisse ensuite le déployer ensemble sur le Cloud public.
+## Architecture
 
-📂 1. La Nouvelle Architecture du Projet (Deep Dive)
-Fini le code en vrac. J'ai repensé toute l'arborescence pour séparer proprement la logique métier, le frontend, l'infrastructure et l'automatisation. Voici la structure exacte que j'ai mise en place sur le dépôt :
+```
+GitHub Push → GitHub Actions (CI/CD)
+                ↓
+         Maven build + Docker image
+                ↓
+         Docker Hub Registry
+                ↓
+     ┌─────────────────────────────┐
+     │   AWS EKS (Kubernetes)      │
+     │   2 workers t3.small        │
+     │   2 replicas API            │
+     │   Monitoring namespace      │
+     └─────────────────────────────┘
+              ↓
+    Prometheus scrape /actuator/prometheus
+              ↓
+         Grafana dashboards
+```
 
-Plaintext
-PROJET M1/
-├── .github/workflows/       # 🤖 CI/CD : L'usine logicielle
-│   └── cicd.yaml            # Le pipeline GitHub Actions
-├── api-backend/             # 🧠 LE CŒUR DU SYSTÈME (Spring Boot)
-│   ├── src/main/java/com/example/
-│   │   ├── controller/      # API Rest : Gère les requêtes HTTP du front
-│   │   ├── model/           # Définition des objets de données
-│   │   ├── repository/      # Couche d'accès aux données (logs, histo)
-│   │   ├── service/         # Logique métier et orchestration K8s
-│   │   │   └── DeploymentService.java  # Le lien direct avec l'API K8s
-│   │   └── App.java         # Point d'entrée de l'application Java
-│   ├── src/main/resources/static/
-│   │   └── index.html       # 🌐 Frontend : Interface de soumission de code
-│   ├── target/              # Fichiers compilés par Maven (.jar, classes)
-│   ├── dockerfile           # Recette de conteneurisation du backend
-│   └── pom.xml              # Gestion des dépendances Java (Maven)
-├── infra/                   # ⚙️ INFRASTRUCTURE & DÉPLOIEMENT
-│   ├── deployment.yaml      # Manifestes Kubernetes (Déploiements, Services)
-│   ├── eksctl.exe / helm.exe # Outils CLI (Désormais bloqués par Git)
-│   └── Vagrantfile          # Vestige de l'ancienne VM
-├── .gitignore               # 🛡️ Filtre de sécurité Git
-└── dockerfile / pom.xml     # Fichiers root de configuration
-🧠 2. Le Backend Java (Le Moteur d'Orchestration)
-C'est ici que j'ai passé le plus de temps. J'ai codé une API REST en Java 17 avec le framework Spring Boot. Ce n'est pas juste un serveur web, c'est un véritable orchestrateur.
+---
 
-Comment ça marche sous le capot ? (Architecture MVC)
-L'Interface Utilisateur (index.html) : L'utilisateur choisit son langage (Node.js, Python, Java) et tape son code. Au clic sur "Lancer", le code est envoyé en JSON à notre backend.
+## Stack technique
 
-Le Routeur (controller/) : Il intercepte la requête, vérifie qu'elle n'est pas vide, et la transmet à la couche de service.
+| Couche | Technologie |
+|--------|-------------|
+| Backend | Spring Boot 3.1.2 / Java 17 |
+| Exécution code | Python 3 + Node.js 18 (dans le container) |
+| Build | Maven 3.9 |
+| Conteneur | Docker (multi-stage build) |
+| Orchestration | Kubernetes 1.29 sur AWS EKS |
+| Infrastructure | Terraform (VPC + EKS) |
+| CI/CD | GitHub Actions + Docker Hub |
+| Monitoring | kube-prometheus-stack (Prometheus + Grafana + AlertManager) |
+| Métriques app | Spring Actuator + Micrometer |
 
-L'Intelligence (service/DeploymentService.java) : C'est la pièce maîtresse du projet. Ce fichier Java utilise le client officiel Kubernetes.
+---
 
-Il génère dynamiquement un conteneur éphémère (Pod) spécifique au langage choisi.
+## 1. Pré-requis
 
-Il injecte le code de l'utilisateur à l'intérieur.
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.6
+- [AWS CLI](https://aws.amazon.com/cli/) configuré (`aws configure`)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- [Helm](https://helm.sh/docs/intro/install/) >= 3.x
+- Compte Docker Hub
 
-Il surveille l'état du Pod. Si le téléchargement de l'image (Pull) prend plus de 20 secondes, il gère proprement un "Timeout" pour ne pas bloquer le serveur.
+---
 
-Une fois le code exécuté, il extrait les logs (le résultat) et ordonne à Kubernetes de détruire le Pod pour libérer les ressources.
+## 2. Déploiement de l'infrastructure (Terraform)
 
-Le Stockage (model/ & repository/) : Ces dossiers sont préparés pour sauvegarder l'historique des exécutions (pour pouvoir relier ça à une base de données SQL plus tard).
+```bash
+cd infra/terraform
+terraform init
+terraform plan
+terraform apply
+```
 
-💥 3. Le Crash Git et la mise en place de la CI/CD
-Le Problème : Le dépôt Git était mort
-En regardant le dossier infra/, vous verrez eksctl.exe et helm.exe. Ces binaires pèsent des centaines de mégaoctets (jusqu'à 144 Mo pour eksctl). En essayant de les versionner, on a complètement saturé Git et GitHub refusait nos push.
+Terraform crée :
+- Un **VPC** avec subnets publics + privés (2 AZ)
+- Un cluster **EKS** Kubernetes 1.29
+- Un **managed node group** : 2x t3.small (scalable jusqu'à 4)
 
-La Solution : Le grand nettoyage
-J'ai dû réécrire l'historique Git en profondeur pour purger ces fichiers. Ensuite, j'ai créé un .gitignore ultra strict pour être sûr que ça n'arrive plus jamais :
+Récupérer la commande kubectl :
+```bash
+terraform output kubeconfig_command
+# Exemple : aws eks update-kubeconfig --region eu-west-1 --name projetm1-eks
+```
 
-Plaintext
-# Fichiers compilés et exécutables lourds
-target/
-*.jar
-*.exe
-*.dll
+---
 
-# IDE et OS
-.idea/
-*.iml
-.vscode/
-.DS_Store
-L'Automatisation : GitHub Actions (cicd.yaml)
-Une fois le repo propre, j'ai codé l'usine logicielle. À chaque fois qu'on pousse sur la branche main, un serveur s'allume, installe Java 17, télécharge Maven, compile tout le dossier api-backend, construit l'image Docker, s'authentifie sur Docker Hub et la met en ligne.
+## 3. Déploiement de l'application
 
-Voici le code complet de notre pipeline :
+```bash
+# Configurer kubectl
+aws eks update-kubeconfig --region eu-west-1 --name projetm1-eks
 
-YAML
-name: CI/CD Pipeline API PaaS
+# Déployer namespace monitoring + l'API
+kubectl apply -f infra/k8s/
 
-on:
-  push:
-    branches:
-      - main
+# Vérifier les pods
+kubectl get pods
+kubectl get svc   # Récupérer l'EXTERNAL-IP du LoadBalancer
+```
 
-jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Récupération du code
-        uses: actions/checkout@v3
+Tester l'API :
+```bash
+curl http://<EXTERNAL-IP>/
+# → Interface web M1 Cloud Platform
 
-      - name: Configuration de Java 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+curl http://<EXTERNAL-IP>/api/status
+# → {"status":"UP","service":"ProjetM1 API","version":"2.0.0",...}
 
-      - name: Compilation et empaquetage (Maven)
-        run: mvn clean package -DskipTests
+curl http://<EXTERNAL-IP>/actuator/prometheus
+# → métriques Prometheus (JVM, HTTP, etc.)
+```
 
-      - name: Connexion à Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+---
 
-      - name: Build et Push de l'image Docker
-        uses: docker/build-push-action@v4
-        with:
-          context: ./api-backend
-          push: true
-          tags: den95/projetm1-api:latest
-(Pour info : le dernier build complet de tout le backend jusqu'à la publication a pris 1 minute et 16 secondes chronomètre en main).
+## 4. Endpoints API
 
-📊 4. La Tour de Contrôle : Observabilité et Monitoring
-Faire tourner des pods, c'est bien. Vérifier que l'infra tient la route, c'est mieux.
-J'ai déployé en local la stack kube-prometheus-stack via Helm dans le namespace monitoring.
+| Méthode | Endpoint | Description |
+|---------|----------|-------------|
+| `GET` | `/` | Interface web (éditeur Python / Node.js) |
+| `GET` | `/api/hello?name=X` | Message de bienvenue |
+| `POST` | `/api/echo` | Echo du body JSON |
+| `GET` | `/api/status` | Statut du service |
+| `POST` | `/api/deployments/deploy` | Exécuter du code Python ou Node.js |
 
-Le Stress-Test K8s
-Pour prouver que Prometheus et Grafana détectent bien l'activité de notre API Java, j'ai écrit un script Node.js intensif que j'ai exécuté depuis notre portail web index.html.
+Exemple d'appel deploy :
+```bash
+curl -X POST http://<EXTERNAL-IP>/api/deployments/deploy \
+  -H "Content-Type: application/json" \
+  -d '{"language":"python","code":"print(\"Hello K8s !\")"}'
+```
 
-Le Script "Mode BRRR" (Surcharge CPU) :
+---
 
-JavaScript
-console.log("🔥 Démarrage du mode BRRR...");
-const duration = 60000; // 60 secondes de calcul à 100% CPU
-const start = Date.now();
-let operations = 0;
+## 5. Installation du monitoring (Prometheus + Grafana)
 
-// Boucle mathématique asynchrone pour saturer le Pod
-while (Date.now() - start < duration) {
-    Math.sqrt(Math.random() * 1000) * Math.atan(Math.random());
-    operations++;
-    if (operations % 5000000 === 0) {
-        console.log(`Statut : ${operations} opérations...`);
-    }
-}
-console.log("✅ Stress-test terminé. Le cluster a bien transpiré !");
-Le Résultat : L'API a créé le Pod, et Grafana a instantanément affiché le pic de charge CPU et l'augmentation des quotas dans ses graphiques. Le pont entre le code, K8s et le monitoring est 100% opérationnel.
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
 
-(Petite galère technique résolue : j'ai dû décoder les Secrets K8s en Base64 pour récupérer le mot de passe admin de Grafana, et monter un port-forward réseau pour exposer l'interface).
+helm install monitoring prometheus-community/kube-prometheus-stack \
+  -f infra/monitoring/prometheus-values.yaml \
+  --namespace monitoring --create-namespace
 
-🚀 5. Comment reproduire cette Infra sur vos PC
-Le code est en ligne. Pour tester ça chez vous et avoir la même puissance de feu que moi, voici la procédure :
+kubectl get pods -n monitoring -w
+kubectl get svc -n monitoring monitoring-grafana
+```
 
-Assurez-vous d'avoir activé Kubernetes dans Docker Desktop.
+Accéder à Grafana :
+- URL : `http://<GRAFANA-EXTERNAL-IP>`
+- Login : `admin`
+- Mot de passe : `ProjetM1Grafana!`
 
-Récupérez les dernières modifs via git pull.
+### Dashboards pré-installés
+| Dashboard | ID Grafana | Description |
+|-----------|-----------|-------------|
+| Kubernetes Cluster | 7249 | CPU, RAM, noeuds |
+| JVM Micrometer | 4701 | Métriques Spring Boot (heap, GC, threads) |
+| Kubernetes Pods | 6417 | État des déploiements |
 
-Pour vérifier que l'API est bien déployée par Kubernetes (via l'image Docker Hub) :
+---
 
-Bash
-kubectl get pods -A
-Pour accéder à la tour de contrôle Grafana (laissez ce terminal ouvert) :
+## 6. CI/CD — GitHub Actions
 
-Bash
-kubectl port-forward svc/monitoring-grafana 8081:80 -n monitoring
-(Rendez-vous sur http://localhost:8081 - venez me voir en privé pour les identifiants admin).
+### Secrets GitHub à configurer
 
-🎯 La Feuille de Route
-L'architecture locale (Proof of Concept) est maintenant un succès total.
-La suite logique pour le projet final :
+```
+Settings → Secrets and variables → Actions → New repository secret
+```
 
-Prendre notre manifeste dans le dossier infra/deployment.yaml.
+| Secret | Valeur |
+|--------|--------|
+| `DOCKER_USERNAME` | Pseudo Docker Hub |
+| `DOCKER_PASSWORD` | Mot de passe Docker Hub |
+| `AWS_ACCESS_KEY_ID` | Clé AWS IAM |
+| `AWS_SECRET_ACCESS_KEY` | Secret AWS IAM |
+| `AWS_REGION` | ex: `eu-west-1` |
+| `EKS_CLUSTER_NAME` | `projetm1-eks` |
 
-Le pousser sur un véritable cluster Cloud Managé (Amazon EKS ou Azure AKS).
+### Pipeline automatique
 
-Connecter notre pipeline GitHub Actions directement à ce Cloud public pour que le déploiement se fasse en live.
+Chaque `git push` sur `main` déclenche :
+1. Compilation Maven + build Docker image
+2. Push image sur Docker Hub (tagué avec le SHA du commit)
+3. Connexion au cluster EKS
+4. Rolling update automatique du déploiement
 
-Prenez le temps d'explorer l'arborescence, en particulier la mécanique MVC dans le dossier api-backend. Dites-moi quand vous avez cloné tout ça et on s'organise une synchro pour que je vous montre comment lancer les tests ! ✌️
+---
+
+## 7. Structure du projet
+
+```
+.
+├── src/main/java/com/example/App.java          # API Spring Boot
+├── src/main/resources/static/index.html        # Interface web
+├── src/main/resources/application.properties   # Config Actuator/Prometheus
+├── pom.xml                                      # Dépendances Maven
+├── dockerfile                                   # Multi-stage build (+ Python3 + Node.js)
+├── infra/
+│   ├── terraform/
+│   │   ├── versions.tf                          # Providers Terraform
+│   │   ├── variables.tf                         # Variables (région, type instance...)
+│   │   ├── main.tf                              # VPC + EKS
+│   │   └── outputs.tf                           # Outputs (endpoint, commande kubectl)
+│   ├── k8s/
+│   │   ├── namespace.yaml                       # Namespace monitoring
+│   │   └── deployment.yaml                      # Déploiement K8s + Service LoadBalancer
+│   └── monitoring/
+│       └── prometheus-values.yaml               # Helm values kube-prometheus-stack
+└── .github/workflows/ci-cd.yml                  # Pipeline CI/CD
+```
+
+---
+
+## 8. Équipe
+
+| Membre | Rôle |
+|--------|------|
+| DENILSSON | Infrastructure AWS EKS (Terraform, K8s) |
+| HAFSA | CI/CD (GitHub Actions, Docker Hub) |
+| GWENN | Monitoring (Prometheus, Grafana) |
+
+---
+
+## 9. Notes sur les coûts AWS
+
+> Estimation pour un projet de courte durée (à supprimer après la soutenance) :
+> - EKS cluster control plane : ~0.10 $/h
+> - 2x t3.small workers : ~0.04 $/h
+> - NAT Gateway : ~0.05 $/h
+> - Load Balancers (x2) : ~0.02 $/h
+> - **Total estimé : ~0.21 $/h (~5 $/jour)**
+
+Pour supprimer toute l'infra :
+```bash
+helm uninstall monitoring -n monitoring
+kubectl delete -f infra/k8s/
+cd infra/terraform && terraform destroy
+```

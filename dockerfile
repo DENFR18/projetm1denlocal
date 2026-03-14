@@ -9,6 +9,8 @@ RUN mvn clean package -DskipTests
 # Run Stage
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
+# Installer Python3 et Node.js pour l'exécution de code utilisateur
+RUN apk add --no-cache python3 nodejs
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
 COPY --from=builder /app/target/*.jar app.jar
