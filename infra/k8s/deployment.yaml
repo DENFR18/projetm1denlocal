@@ -36,14 +36,14 @@ spec:
         # Vérification que l'app est vivante
         livenessProbe:
           httpGet:
-            path: /
+            path: /api/status
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
           failureThreshold: 5
         readinessProbe:
           httpGet:
-            path: /
+            path: /api/status
             port: 8080
           initialDelaySeconds: 20
           periodSeconds: 5

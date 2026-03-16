@@ -74,6 +74,35 @@ module "eks" {
   # Accès admin au cluster pour le compte Terraform
   enable_cluster_creator_admin_permissions = true
 
+  # Règles de sécurité supplémentaires pour les worker nodes
+  # Permet au Load Balancer AWS (ELB) d'atteindre les NodePorts (30000-32767)
+  node_security_group_additional_rules = {
+    ingress_nodeport_range = {
+      type        = "ingress"
+      protocol    = "tcp"
+      from_port   = 30000
+      to_port     = 32767
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "Allow ELB to reach NodePort services (API, Grafana, etc.)"
+    }
+    ingress_http = {
+      type        = "ingress"
+      protocol    = "tcp"
+      from_port   = 80
+      to_port     = 80
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "Allow HTTP traffic"
+    }
+    ingress_https = {
+      type        = "ingress"
+      protocol    = "tcp"
+      from_port   = 443
+      to_port     = 443
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "Allow HTTPS traffic"
+    }
+  }
+
   tags = {
     Project     = "ProjetM1"
     Environment = "production"
