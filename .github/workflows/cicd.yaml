@@ -57,8 +57,24 @@ jobs:
             --region ${{ secrets.AWS_REGION }} \
             --name ${{ secrets.EKS_CLUSTER_NAME }}
 
-      - name: Déploiement des manifestes Kubernetes
-        run: kubectl apply -f infra/k8s/
+      - name: Création/mise à jour du secret Docker Hub
+        run: |
+          kubectl create secret docker-registry dockerhub-credentials \
+            --docker-server=https://index.docker.io/v1/ \
+            --docker-username=${{ secrets.DOCKER_USERNAME }} \
+            --docker-password=${{ secrets.DOCKER_PASSWORD }} \
+            --namespace=default \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Déploiement des manifestes Kubernetes (hors RBAC)
+        run: |
+          kubectl apply -f infra/k8s/namespace.yaml
+          kubectl apply -f infra/k8s/deployment.yaml
+          kubectl apply -f infra/k8s/hpa.yaml
+
+      - name: Application du RBAC (nécessite droits cluster-admin)
+        run: kubectl apply -f infra/k8s/rbac.yaml
+        continue-on-error: true
 
       - name: Rolling update avec la nouvelle image
         run: |
