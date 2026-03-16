@@ -151,6 +151,9 @@ jobs:
             --namespace=default \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Appliquer le Deployment et Service API
+        run: kubectl apply -f infra/k8s/deployment.yaml
+
       - name: Rolling update vers la nouvelle image
         run: |
           kubectl set image deployment/api-backend-deployment \
