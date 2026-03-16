@@ -82,7 +82,7 @@ module "eks" {
       protocol    = "tcp"
       from_port   = 30000
       to_port     = 32767
-      cidr_blocks = ["0.0.0.0/0"]
+      cidr_ipv4   = "0.0.0.0/0"
       description = "Allow ELB to reach NodePort services (API, Grafana, etc.)"
     }
     ingress_http = {
@@ -90,7 +90,7 @@ module "eks" {
       protocol    = "tcp"
       from_port   = 80
       to_port     = 80
-      cidr_blocks = ["0.0.0.0/0"]
+      cidr_ipv4   = "0.0.0.0/0"
       description = "Allow HTTP traffic"
     }
     ingress_https = {
@@ -98,7 +98,7 @@ module "eks" {
       protocol    = "tcp"
       from_port   = 443
       to_port     = 443
-      cidr_blocks = ["0.0.0.0/0"]
+      cidr_ipv4   = "0.0.0.0/0"
       description = "Allow HTTPS traffic"
     }
   }
